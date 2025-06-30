@@ -1,0 +1,190 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       String  @id @default(cuid())
+  email    String? @unique
+  name     String?
+  number   String  @unique
+  otp      String?
+  password String?
+  booking  Booking[] // One-to-many relation with Booking
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model vendor {
+  id            String   @id @default(cuid())
+  name          String?
+  email         String?  @unique
+  number        String   @unique
+  otp           String?
+  pan_number    String?
+  panotp        String?
+  addharotp     String?
+  addhar_number String?
+  bus           Bus[] // One-to-many relation with Bus
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Bus {
+  id           String     @id @default(uuid())
+  name         String
+  number       String     @unique
+  description  String?
+  type         Type       @default(Non_AC)
+  seatType     SeaterType @default(SEATER)
+  deckType     DeckType   @default(SINGLE)
+  seatLayout   SeatLayout @default(TWO_BY_ONE)
+  time         DateTime?
+  seats        Int
+  totalSeaters Int?
+  TotalSleeper Int?
+  isActive     Boolean    @default(true)
+  vendorId     String
+  vendor       vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  seatsList    Seat[]     @relation("BusSeats") // Relation to Seat model
+  routes       Route[]   // One-to-many relation with Route
+  stoppages    BusStoppage[] // One-to-many relation with BusStoppage
+  bookings     Booking[] // One-to-many relation with Booking
+  image        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+
+model Route {        
+  id        String   @id @default(cuid())
+  name      String
+  source    String
+  destination String
+  distance  Int
+  price      Float
+  busId     String
+  bus       Bus      @relation(fields: [busId], references: [id], onDelete: Cascade)
+  segments  RouteSegment[] // One-to-many relation with RouteSegment
+  bookings  Booking[] // One-to-many relation with Booking
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RouteSegment {
+  id           String   @id @default(cuid())
+  routeId      String
+  route        Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  stopName     String   // Name of the stop or segment (e.g., "City A Stop")
+  sequence     Int      // Order of the segment in the route (e.g., 1, 2, 3)
+  distance     Int?     // Distance from the previous segment (in km)
+  duration     Int?     // Estimated duration to reach this segment (in minutes)
+  price        Float?   // Price for this segment (if applicable)
+  arrivalTime  DateTime? // Optional arrival time at this segment
+  departureTime DateTime? // Optional departure time from this segment
+  boardingBookings Booking[] @relation("Boarding")
+  alightingBookings Booking[] @relation("Alighting")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+ 
+
+model Seat {w
+  id         String     @id @default(uuid())
+  busId      String
+  bus        Bus        @relation("BusSeats", fields: [busId], references: [id], onDelete: Cascade)
+  seatNumber String
+  gender     GenderType @default(Unassigned) // Enum for gender designation
+  isBooked   Boolean    @default(false)
+  booking Booking[] 
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+}
+model BusStoppage {
+  id             String      @id @default(cuid())
+  busId          String
+  bus            Bus         @relation(fields: [busId], references: [id], onDelete: Cascade)
+  busStandName    String    
+  arrivalTime    DateTime?   // Actual or scheduled arrival time at the stop
+  departureTime  DateTime?   // Actual or scheduled departure time from the stop
+  status         StopStatus  @default(SCHEDULED) // Status of the stoppage (e.g., Scheduled, Arrived, Departed)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+model Booking {
+  id              String       @id @default(cuid())
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  busId           String
+  bus             Bus          @relation(fields: [busId], references: [id], onDelete: Cascade)
+  seatId         String       // Seat booked by the passenger
+  seat           Seat         @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  passengerGender GenderType @default(Unassigned)
+  routeId         String
+  route           Route        @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  boardingSegmentId String?    // Optional: RouteSegment where passenger boards
+  boardingSegment RouteSegment? @relation("Boarding", fields: [boardingSegmentId], references: [id], onDelete: SetNull)
+  alightingSegmentId String?   // Optional: RouteSegment where passenger alights
+  alightingSegment RouteSegment? @relation("Alighting", fields: [alightingSegmentId], references: [id], onDelete: SetNull)
+  bookingDate     DateTime     @default(now())
+  travelDate      DateTime     // Date of travel
+  price           Float        // Total price for the booking
+  status          BookingStatus @default(CONFIRMED)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+enum BookingStatus {
+  CONFIRMED
+  PENDING
+  CANCELLED
+  COMPLETED
+}
+
+enum StopStatus {
+  SCHEDULED
+  ARRIVED
+  DEPARTED
+  CANCELLED
+}
+
+enum SeatLayout {
+  TWO_BY_ONE
+  TWO_BY_TWO
+  THREE_BY_TWO
+}
+
+enum Type {
+  AC
+  Non_AC
+}
+
+enum SeaterType {
+  SEATER
+  SLEEPER
+  MIXED
+}
+
+enum DeckType {
+  SINGLE
+  DOUBLE
+  TRIPLE
+}
+
+enum GenderType {
+  Male
+  Female
+  Unassigned
+}
