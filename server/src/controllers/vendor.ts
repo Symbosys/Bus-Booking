@@ -3,14 +3,15 @@ import { Request, Response } from "express";
 import prisma from "../config/prisma";
 import otpGenerator from "otp-generator";
 import vendorSchema from "../zod/vendor";
+import { ErrorResponse } from "../utils/response.util";
+import { asyncHandler } from "../middlewares/error.middleware";
 
-export async function vendorsignup(req: Request, res: Response): Promise<void> {
-  try {
+export async function vendorsignup(req: Request, res: Response) {
     const { number } = req.body;
 
     const validData = vendorSchema.parse({ number });
 
-    const existingvendor = await prisma.user.findUnique({
+    const existingvendor = await prisma.vendor.findUnique({
       where: {
         number: validData.number,
       },
@@ -27,37 +28,30 @@ export async function vendorsignup(req: Request, res: Response): Promise<void> {
         data: { otp },
       });
 
-      res.json({
+      return res.json({
         message: "OTP sent successfully",
         success: true,
+        
       });
-      return;
+    }else {
+      await prisma.vendor.create({
+        data: { number: validData.number },
+      });
+  
+      const otp = otpGenerator.generate(6, {
+        digits: true,
+      });
+  
+      await prisma.vendor.update({
+        where: { number: validData.number },
+        data: { otp },
+      });
+  
+      res.json({
+        message: "User created and OTP sent successfully",
+        success: true,
+      });
     }
-
-    await prisma.vendor.create({
-      data: { number: validData.number },
-    });
-
-    const otp = otpGenerator.generate(6, {
-      digits: true,
-    });
-
-    await prisma.vendor.update({
-      where: { number: validData.number },
-      data: { otp },
-    });
-
-    res.json({
-      message: "User created and OTP sent successfully",
-      success: true,
-    });
-  } catch (error) {
-    console.error("Error in usersignup:", error);
-    res.status(500).json({
-      message: "Something went wrong",
-      success: false,
-    });
-  }
 }
 
 export async function verifyotp(req: Request, res: Response) {
@@ -111,53 +105,54 @@ export async function GetALlvendor(req: Request, res: Response) {
     });
   }
 }
-export async function updateVendor (req:Request,res:Response){
-  try {
-   const {number,email,id,name}= req.body;
-  const validData = vendorSchema.parse({number,email,id,name})
- 
- 
-  const vendor = await prisma.vendor.findUnique({
-   where: { number },
- });
- if (!vendor) {
-   return res.status(404).json({
-     message: "vendor not found",
-     success: false,
-   });
-   
- }
- if (validData.number && validData.number !== vendor.number) {
-   const existingvendor = await prisma.vendor.findUnique({
-     where: { number: validData.number },
-   });
-   if (existingvendor) {
-     res.status(400).json({
-       message: "Number already in use",
-       success: false,
-     });
-     return;
-   }
- }
- const updatedvendor = await prisma.vendor.update({
-   where: { number },
-   data: {
-     number: validData.number || vendor.number, // Only update if provided
-   },
- });
- 
- res.status(200).json({
-   message: "Vendor updated successfully",
-   success: true,
-   data: {
-     number: updatedvendor.number,
-   },
- });
- }
- catch (error) {
-   throw error;
+export const updateVendor = asyncHandler(async (req, res, next) => {
+  const id = req.body.id
+  if(!id){
+    return next(new ErrorResponse("id is required", 400))
   }
-  
- 
- }
- 
+
+  const existingvendor = await prisma.user.findUnique({
+    where: {
+      id
+    }
+  })
+
+  if(!existingvendor) {
+    return next(new ErrorResponse("User not found", 404))
+  }
+
+  const validData = vendorSchema.partial().parse(req.body);
+  if(validData.email){
+    const existingvendorWithEmail = await prisma.vendor.findUnique({
+      where: {
+        email: validData.email
+      }
+    })
+    if(existingvendorWithEmail) {
+      return next(new ErrorResponse("User with this email already exists", 400))
+    }
+  }
+  if(validData.number){
+    const existingvendorWithEmail = await prisma.vendor.findUnique({
+      where: {
+        email: validData.number
+      }
+    })
+    if(existingvendorWithEmail) {
+      return next(new ErrorResponse("User with this number already exists", 400))
+    }
+  }
+
+  const user = await prisma.vendor.update({
+    where: {
+      id
+    }, data: validData
+  })
+
+  return res.status(200).json({
+    message: "User updated succesfully",
+    success: true,
+    data: user
+  })
+
+})

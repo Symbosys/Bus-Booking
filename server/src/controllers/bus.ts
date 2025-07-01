@@ -1,8 +1,9 @@
-import { Request, Response } from "express";
-import BusSchema from "../zod/Bus";
+import { NextFunction, Request, Response } from "express";
+import {BusSchema} from "../zod/Bus";
 import prisma from "../config/prisma";
+import { ErrorResponse } from "../utils/response.util";
 
-export async function createBus(req: Request, res: Response): Promise<void> {
+export async function createBus(req: Request, res: Response, next: NextFunction) {
     const { name, number, acType, seaterType, deckType, time, isActive, vendorId } = req.body;
   
     // Validate input
@@ -20,7 +21,7 @@ export async function createBus(req: Request, res: Response): Promise<void> {
     // Check if vendor exists
     const vendor = await prisma.vendor.findUnique({ where: { id: validData.vendorId } });
     if (!vendor) {
-      throw new Error("Vendor not found");
+      return next(new ErrorResponse("Vendor not found", 400))
     }
   
     // Check if bus number is unique
@@ -31,16 +32,7 @@ export async function createBus(req: Request, res: Response): Promise<void> {
   
     // Create bus
     const bus = await prisma.bus.create({
-      data: {
-        name: validData.name,
-        number: validData.number,
-        acType: validData.acType,
-        seaterType: validData.seaterType,
-        deckType: validData.deckType,
-        time: validData.time,
-        isActive: validData.isActive,
-        vendorId: validData.vendorId,
-      },
+      data:  validData,
       include: {
         vendor: {
           select: { id: true, name: true, number: true },

@@ -87,7 +87,8 @@ model RouteSegment {
   id           String   @id @default(cuid())
   routeId      String
   route        Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
-  stopName     String   // Name of the stop or segment (e.g., "City A Stop")
+  startLocation String   // Starting point of the segment (e.g., "City A")
+  endLocation   String   // Ending point of the segment (e.g., "City B
   sequence     Int      // Order of the segment in the route (e.g., 1, 2, 3)
   distance     Int?     // Distance from the previous segment (in km)
   duration     Int?     // Estimated duration to reach this segment (in minutes)
@@ -101,7 +102,7 @@ model RouteSegment {
 }
  
 
-model Seat {w
+model Seat {
   id         String     @id @default(uuid())
   busId      String
   bus        Bus        @relation("BusSeats", fields: [busId], references: [id], onDelete: Cascade)
@@ -141,7 +142,7 @@ model Booking {
   bookingDate     DateTime     @default(now())
   travelDate      DateTime     // Date of travel
   price           Float        // Total price for the booking
-  status          BookingStatus @default(CONFIRMED)
+  status          BookingStatus @default(PENDING)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 }

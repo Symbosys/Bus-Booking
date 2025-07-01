@@ -2,7 +2,8 @@ import express from "express";
 import { GetAllUser, updateUser, usersignup, verifyotp } from "./controllers/user";
 import { updateVendor, vendorsignup } from "./controllers/vendor";
 import { createBus, getAllBuses } from "./controllers/bus";
-import { bookSeat } from "./controllers/seat";
+// import { bookSeat } from "./controllers/seat";
+import errorMiddleware, { asyncHandler } from "./middlewares/error.middleware";
 
 const app = express();
 
@@ -15,18 +16,18 @@ app.get("/", function(req,res){
 })
 
 // user API
-app.post("/user/signup", usersignup);
-app.post("/user/verify-otp",verifyotp)
-app.get("/user/all", GetAllUser)
-app.put("/user/update",updateUser)
+app.post("/user/send-otp", asyncHandler(usersignup));
+app.post("/user/verify-otp", asyncHandler(verifyotp))
+app.get("/user/all", asyncHandler(GetAllUser))
+app.put("/user/update", updateUser)
 
   
 
 
 // vendor API
-app.post("/vendor/signup", vendorsignup)
-app.post("/vendor/verify-otp",verifyotp)
-app.get("/vendor/all", GetAllUser)
+app.post("/vendor/signup", asyncHandler(vendorsignup))
+app.post("/vendor/verify-otp", asyncHandler(verifyotp))
+app.get("/vendor/all", asyncHandler(GetAllUser))
 app.put("/vendor/update",updateVendor)
 
 
@@ -34,7 +35,12 @@ app.put("/vendor/update",updateVendor)
 app.post("/bus/create",createBus)
 app.post("/bus/all",getAllBuses)
 //seat Api
-app.post("/bus/book",bookSeat)
+// app.post("/bus/book",bookSeat)
+
+
+
+// ErrorMiddleware
+app.use(errorMiddleware)
 
 
 
