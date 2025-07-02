@@ -95,17 +95,10 @@ const GetAllUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
 });
 exports.GetAllUser = GetAllUser;
 exports.updateUser = (0, error_middleware_1.asyncHandler)((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    const id = req.body.id;
+    var _a;
+    const id = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
     if (!id) {
         return next(new response_util_1.ErrorResponse("id is required", 400));
-    }
-    const existingUser = yield prisma_1.default.user.findUnique({
-        where: {
-            id
-        }
-    });
-    if (!existingUser) {
-        return next(new response_util_1.ErrorResponse("User not found", 404));
     }
     const validData = User_1.default.partial().parse(req.body);
     if (validData.email) {
@@ -121,7 +114,7 @@ exports.updateUser = (0, error_middleware_1.asyncHandler)((req, res, next) => __
     if (validData.number) {
         const existingUserWithEmail = yield prisma_1.default.user.findUnique({
             where: {
-                email: validData.number
+                number: validData.number
             }
         });
         if (existingUserWithEmail) {

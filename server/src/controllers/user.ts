@@ -1,4 +1,4 @@
-import { NextFunction, Request, RequestHandler, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import userSchema from "../zod/User";
 import prisma from "../config/prisma";
 import otpGenerator from "otp-generator";
@@ -90,22 +90,11 @@ export const GetAllUser = async (req: Request, res: Response) => {
   });
 }
 
-
     
  export const updateUser = asyncHandler(async (req, res, next) => {
-  const id = req.body.id
+  const id = req.user?.id
   if(!id){
     return next(new ErrorResponse("id is required", 400))
-  }
-
-  const existingUser = await prisma.user.findUnique({
-    where: {
-      id
-    }
-  })
-
-  if(!existingUser) {
-    return next(new ErrorResponse("User not found", 404))
   }
 
   const validData = userSchema.partial().parse(req.body);
@@ -122,7 +111,7 @@ export const GetAllUser = async (req: Request, res: Response) => {
   if(validData.number){
     const existingUserWithEmail = await prisma.user.findUnique({
       where: {
-        email: validData.number
+        number: validData.number
       }
     })
     if(existingUserWithEmail) {

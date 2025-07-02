@@ -117,17 +117,10 @@ function GetALlvendor(req, res) {
     });
 }
 exports.updateVendor = (0, error_middleware_1.asyncHandler)((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    const id = req.body.id;
+    var _a;
+    const id = (_a = req.vendor) === null || _a === void 0 ? void 0 : _a.id;
     if (!id) {
         return next(new response_util_1.ErrorResponse("id is required", 400));
-    }
-    const existingvendor = yield prisma_1.default.user.findUnique({
-        where: {
-            id
-        }
-    });
-    if (!existingvendor) {
-        return next(new response_util_1.ErrorResponse("User not found", 404));
     }
     const validData = vendor_1.default.partial().parse(req.body);
     if (validData.email) {

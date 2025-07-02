@@ -1,78 +1,169 @@
+import { NextFunction, Request, Response } from "express";
+import prisma from "../config/prisma";
+import { asyncHandler } from "../middlewares/error.middleware";
+import { ErrorResponse, SuccessResponse } from "../utils/response.util";
+import { statusCode } from "../types/types";
+import { BusStoppageSchema } from "../zod/Bus";
 
-import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+export const getAllBusStops = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+  // Pagination and filtering
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+  const busId = req.query.busId ? String(req.query.busId) : undefined;
+  const status = req.query.status ? String(req.query.status) : undefined;
+  const searchQuery = req.query.searchQuery ? String(req.query.searchQuery) : undefined;
 
+  // Build where clause
+  const where: any = {};
+  if (searchQuery) {
+    where.OR = [
+      { busStandName: { contains: searchQuery, mode: "insensitive" } },
+    ];
+  }
+  if (busId) where.busId = busId;
+  if (status) {
+    where.status = { equals: status, mode: "insensitive" };
+  }
 
-const prisma = new PrismaClient();
+  const [busStops, totalBusStops] = await Promise.all([
+    prisma.busStoppage.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { createdAt: "desc" },
+      include: {
+        bus: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.busStoppage.count({ where }),
+  ]);
 
-// Get all bus stops
-export const getAllBusStops = async (req: Request, res: Response) => {
-  const busStops = await prisma.busStop.findMany({
-    include: {
-      bus: { select: { id: true, name: true } },
-    },
+  if (page > Math.ceil(totalBusStops / limit) && totalBusStops > 0) {
+    return next(new ErrorResponse("Page not found", statusCode.Not_Found));
+  }
+
+  return SuccessResponse(res, "Bus stops retrieved successfully", {
+    busStops,
+    currentPage: page,
+    totalPages: Math.ceil(totalBusStops / limit),
+    totalBusStops,
+    count: busStops.length,
+    hasNextPage: page * limit < totalBusStops,
+    hasPrevPage: page > 1,
   });
-  res.status(200).json(busStops);
-};
+});
 
-// Get a single bus stop by ID
-export const getBusStopById = async (req: Request, res: Response) => {
+export const getBusStopById = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
   const { id } = req.params;
-  const busStop = await prisma.busStop.findUnique({
+
+  if (!id) {
+    return next(new ErrorResponse("Bus stop ID is required", statusCode.Bad_Request));
+  }
+
+  const busStop = await prisma.busStoppage.findUnique({
     where: { id },
     include: {
       bus: { select: { id: true, name: true } },
     },
+  });
+
+  if (!busStop) {
+    return next(new ErrorResponse("Bus stop not found", statusCode.Not_Found));
+  }
+
+  return SuccessResponse(res, "Bus stop retrieved successfully", busStop, statusCode.OK);
+});
+
+export const createBusStop = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+  const validData = BusStoppageSchema.parse(req.body);
+
+  const busStop = await prisma.$transaction(async (tx) => {
+    // Check if bus exists
+    const bus = await tx.bus.findUnique({
+      where: { id: validData.busId },
+    });
+    if (!bus) {
+      return next(new ErrorResponse("Bus not found", statusCode.Bad_Request));
+    }
+
+    // Create bus stop
+    return await tx.busStoppage.create({
+      data: {
+        ...validData,
+        arrivalTime: validData.arrivalTime ? new Date(validData.arrivalTime) : null,
+        departureTime: validData.departureTime ? new Date(validData.departureTime) : null,
+      },
+      include: {
+        bus: { select: { id: true, name: true } },
+      },
+    });
+  });
+
+  return SuccessResponse(res, "Bus stop created successfully", busStop, statusCode.Created);
+});
+
+export const updateBusStop = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const validData = BusStoppageSchema.partial().parse(req.body);
+
+  if (!id) {
+    return next(new ErrorResponse("Bus stop ID is required", statusCode.Bad_Request));
+  }
+
+  const busStop = await prisma.$transaction(async (tx) => {
+    // Check if bus stop exists
+    const existingBusStop = await tx.busStoppage.findUnique({
+      where: { id },
+    });
+    if (!existingBusStop) {
+      return next(new ErrorResponse("Bus stop not found", statusCode.Not_Found));
+    }
+
+    // Check if bus exists (if busId is provided)
+    if (validData.busId) {
+      const bus = await tx.bus.findUnique({
+        where: { id: validData.busId },
+      });
+      if (!bus) {
+        return next(new ErrorResponse("Bus not found", statusCode.Bad_Request));
+      }
+    }
+
+    // Update bus stop
+    return await tx.busStoppage.update({
+      where: { id },
+      data: {
+        ...validData,
+        arrivalTime: validData.arrivalTime ? new Date(validData.arrivalTime) : undefined,
+        departureTime: validData.departureTime ? new Date(validData.departureTime) : undefined,
+      },
+      include: {
+        bus: { select: { id: true, name: true } },
+      },
+    });
+  });
+
+  return SuccessResponse(res, "Bus stop updated successfully", busStop, statusCode.OK);
+});
+
+export const deleteBusStop = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return next(new ErrorResponse("Bus stop ID is required", statusCode.Bad_Request));
+  }
+
+  const busStop = await prisma.busStoppage.findUnique({
+    where: { id },
   });
   if (!busStop) {
-    return res.status(404).json({ error: 'Bus stop not found' });
+    return next(new ErrorResponse("Bus stop not found", statusCode.Not_Found));
   }
-  res.status(200).json(busStop);
-};
 
-// Create a new bus stop
-export const createBusStop = async (req: Request, res: Response) => {
-  const { busId, busStandName, arrivalTime, departureTime, status } = req.body;
-  const busStop = await prisma.busStop.create({
-    data: {
-      busId,
-      busStandName,
-      arrivalTime: arrivalTime ? new Date(arrivalTime) : null,
-      departureTime: departureTime ? new Date(departureTime) : null,
-      status,
-    },
-    include: {
-      bus: { select: { id: true, name: true } },
-    },
-  });
-  res.status(201).json(busStop);
-};
-
-// Update a bus stop
-export const updateBusStop = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { busId, busStandName, arrivalTime, departureTime, status } = req.body;
-  const busStop = await prisma.busStop.update({
-    where: { id },
-    data: {
-      busId,
-      busStandName,
-      arrivalTime: arrivalTime ? new Date(arrivalTime) : null,
-      departureTime: departureTime ? new Date(departureTime) : null,
-      status,
-    },
-    include: {
-      bus: { select: { id: true, name: true } },
-    },
-  });
-  res.status(200).json(busStop);
-};
-
-// Delete a bus stop
-export const deleteBusStop = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  await prisma.busStop.delete({
+  await prisma.busStoppage.delete({
     where: { id },
   });
-  res.status(204).send();
-};
+
+  return SuccessResponse(res, "Bus stop deleted successfully", {}, statusCode.OK);
+});

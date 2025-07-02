@@ -8,26 +8,66 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteRouteSegment = exports.updateRouteSegment = exports.createRouteSegment = exports.getRouteSegmentById = exports.getAllRouteSegments = void 0;
-const client_1 = require("@prisma/client");
-const prisma = new client_1.PrismaClient();
-// Get all route segments
-const getAllRouteSegments = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const routeSegments = yield prisma.routeSegment.findMany({
-        include: {
-            route: { select: { id: true, name: true } },
-            boardingBookings: { select: { id: true } },
-            alightingBookings: { select: { id: true } },
-        },
+const error_middleware_1 = require("../middlewares/error.middleware");
+const response_util_1 = require("../utils/response.util");
+const types_1 = require("../types/types");
+const Bus_1 = require("../zod/Bus");
+const prisma_1 = __importDefault(require("../config/prisma"));
+exports.getAllRouteSegments = (0, error_middleware_1.asyncHandler)((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    // Pagination and filtering
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    const routeId = req.query.routeId ? String(req.query.routeId) : undefined;
+    const searchQuery = req.query.searchQuery ? String(req.query.searchQuery) : undefined;
+    // Build where clause
+    const where = {};
+    if (searchQuery) {
+        where.OR = [
+            { startLocation: { contains: searchQuery, mode: "insensitive" } },
+            { endLocation: { contains: searchQuery, mode: "insensitive" } },
+        ];
+    }
+    if (routeId)
+        where.routeId = routeId;
+    const [routeSegments, totalRouteSegments] = yield Promise.all([
+        prisma_1.default.routeSegment.findMany({
+            where,
+            skip,
+            take: limit,
+            orderBy: { sequence: "asc" }, // Sort by sequence for logical order
+            include: {
+                route: { select: { id: true, name: true } },
+                boardingBookings: { select: { id: true } },
+                alightingBookings: { select: { id: true } },
+            },
+        }),
+        prisma_1.default.routeSegment.count({ where }),
+    ]);
+    if (page > Math.ceil(totalRouteSegments / limit) && totalRouteSegments > 0) {
+        return next(new response_util_1.ErrorResponse("Page not found", types_1.statusCode.Not_Found));
+    }
+    return (0, response_util_1.SuccessResponse)(res, "Route segments retrieved successfully", {
+        routeSegments,
+        currentPage: page,
+        totalPages: Math.ceil(totalRouteSegments / limit),
+        totalRouteSegments,
+        count: routeSegments.length,
+        hasNextPage: page * limit < totalRouteSegments,
+        hasPrevPage: page > 1,
     });
-    res.status(200).json(routeSegments);
-});
-exports.getAllRouteSegments = getAllRouteSegments;
-// Get a single route segment by ID
-const getRouteSegmentById = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+}));
+exports.getRouteSegmentById = (0, error_middleware_1.asyncHandler)((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     const { id } = req.params;
-    const routeSegment = yield prisma.routeSegment.findUnique({
+    if (!id) {
+        return next(new response_util_1.ErrorResponse("Route segment ID is required", types_1.statusCode.Bad_Request));
+    }
+    const routeSegment = yield prisma_1.default.routeSegment.findUnique({
         where: { id },
         include: {
             route: { select: { id: true, name: true } },
@@ -36,63 +76,112 @@ const getRouteSegmentById = (req, res) => __awaiter(void 0, void 0, void 0, func
         },
     });
     if (!routeSegment) {
-        return res.status(404).json({ error: 'Route segment not found' });
+        return next(new response_util_1.ErrorResponse("Route segment not found", types_1.statusCode.Not_Found));
     }
-    res.status(200).json(routeSegment);
-});
-exports.getRouteSegmentById = getRouteSegmentById;
-// Create a new route segment
-const createRouteSegment = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { routeId, startLocation, endLocation, sequence, distance, duration, price, arrivalTime, departureTime, } = req.body;
-    const routeSegment = yield prisma.routeSegment.create({
-        data: {
-            routeId,
-            startLocation,
-            endLocation,
-            sequence: Number(sequence),
-            distance: distance ? Number(distance) : null,
-            duration: duration ? Number(duration) : null,
-            price: price ? Number(price) : null,
-            arrivalTime: arrivalTime ? new Date(arrivalTime) : null,
-            departureTime: departureTime ? new Date(departureTime) : null,
-        },
-        include: {
-            route: { select: { id: true, name: true } },
-        },
-    });
-    res.status(201).json(routeSegment);
-});
-exports.createRouteSegment = createRouteSegment;
-// Update a route segment
-const updateRouteSegment = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    return (0, response_util_1.SuccessResponse)(res, "Route segment retrieved successfully", routeSegment, types_1.statusCode.OK);
+}));
+exports.createRouteSegment = (0, error_middleware_1.asyncHandler)((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const validData = Bus_1.RouteSegmentSchema.parse(req.body);
+    const routeSegment = yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+        // Check if route exists
+        const route = yield tx.route.findUnique({
+            where: { id: validData.routeId },
+        });
+        if (!route) {
+            return next(new response_util_1.ErrorResponse("Route not found", types_1.statusCode.Bad_Request));
+        }
+        // Check for duplicate sequence in the same route
+        const existingSegment = yield tx.routeSegment.findFirst({
+            where: {
+                routeId: validData.routeId,
+                sequence: validData.sequence,
+            },
+        });
+        if (existingSegment) {
+            return next(new response_util_1.ErrorResponse("A segment with this sequence already exists for this route", types_1.statusCode.Bad_Request));
+        }
+        // Create route segment
+        return yield tx.routeSegment.create({
+            data: Object.assign(Object.assign({}, validData), { arrivalTime: validData.arrivalTime ? new Date(validData.arrivalTime) : null, departureTime: validData.departureTime ? new Date(validData.departureTime) : null }),
+            include: {
+                route: { select: { id: true, name: true } },
+            },
+        });
+    }));
+    return (0, response_util_1.SuccessResponse)(res, "Route segment created successfully", routeSegment, types_1.statusCode.Created);
+}));
+exports.updateRouteSegment = (0, error_middleware_1.asyncHandler)((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     const { id } = req.params;
-    const { routeId, startLocation, endLocation, sequence, distance, duration, price, arrivalTime, departureTime, } = req.body;
-    const routeSegment = yield prisma.routeSegment.update({
-        where: { id },
-        data: {
-            routeId,
-            startLocation,
-            endLocation,
-            sequence: Number(sequence),
-            distance: distance ? Number(distance) : null,
-            duration: duration ? Number(duration) : null,
-            price: price ? Number(price) : null,
-            arrivalTime: arrivalTime ? new Date(arrivalTime) : null,
-            departureTime: departureTime ? new Date(departureTime) : null,
-        },
-        include: {
-            route: { select: { id: true, name: true } },
-        },
-    });
-    res.status(200).json(routeSegment);
-});
-exports.updateRouteSegment = updateRouteSegment;
-// Delete a route segment
-const deleteRouteSegment = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const validData = Bus_1.RouteSegmentSchema.partial().parse(req.body);
+    if (!id) {
+        return next(new response_util_1.ErrorResponse("Route segment ID is required", types_1.statusCode.Bad_Request));
+    }
+    const routeSegment = yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+        // Check if route segment exists
+        const existingSegment = yield tx.routeSegment.findUnique({
+            where: { id },
+        });
+        if (!existingSegment) {
+            return next(new response_util_1.ErrorResponse("Route segment not found", types_1.statusCode.Not_Found));
+        }
+        // Check if route exists (if routeId is provided)
+        if (validData.routeId) {
+            const route = yield tx.route.findUnique({
+                where: { id: validData.routeId },
+            });
+            if (!route) {
+                return next(new response_util_1.ErrorResponse("Route not found", types_1.statusCode.Bad_Request));
+            }
+        }
+        // Check for duplicate sequence (if sequence is provided)
+        if (validData.sequence && validData.routeId) {
+            const existingSegment = yield tx.routeSegment.findFirst({
+                where: {
+                    routeId: validData.routeId,
+                    sequence: validData.sequence,
+                    NOT: { id },
+                },
+            });
+            if (existingSegment) {
+                return next(new response_util_1.ErrorResponse("A segment with this sequence already exists for this route", types_1.statusCode.Bad_Request));
+            }
+        }
+        // Update route segment
+        return yield tx.routeSegment.update({
+            where: { id },
+            data: Object.assign(Object.assign({}, validData), { arrivalTime: validData.arrivalTime ? new Date(validData.arrivalTime) : undefined, departureTime: validData.departureTime ? new Date(validData.departureTime) : undefined }),
+            include: {
+                route: { select: { id: true, name: true } },
+            },
+        });
+    }));
+    return (0, response_util_1.SuccessResponse)(res, "Route segment updated successfully", routeSegment, types_1.statusCode.OK);
+}));
+exports.deleteRouteSegment = (0, error_middleware_1.asyncHandler)((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     const { id } = req.params;
-    yield prisma.routeSegment.delete({
+    if (!id) {
+        return next(new response_util_1.ErrorResponse("Route segment ID is required", types_1.statusCode.Bad_Request));
+    }
+    const routeSegment = yield prisma_1.default.routeSegment.findUnique({
         where: { id },
     });
-    res.status(204).send();
-});
-exports.deleteRouteSegment = deleteRouteSegment;
+    if (!routeSegment) {
+        return next(new response_util_1.ErrorResponse("Route segment not found", types_1.statusCode.Not_Found));
+    }
+    // Check for dependent bookings
+    const bookings = yield prisma_1.default.booking.findFirst({
+        where: {
+            OR: [
+                { boardingSegmentId: id },
+                { alightingSegmentId: id },
+            ],
+        },
+    });
+    if (bookings) {
+        return next(new response_util_1.ErrorResponse("Cannot delete route segment with active bookings", types_1.statusCode.Bad_Request));
+    }
+    yield prisma_1.default.routeSegment.delete({
+        where: { id },
+    });
+    return (0, response_util_1.SuccessResponse)(res, "Route segment deleted successfully", {}, types_1.statusCode.OK);
+}));

@@ -106,19 +106,9 @@ export async function GetALlvendor(req: Request, res: Response) {
   }
 }
 export const updateVendor = asyncHandler(async (req, res, next) => {
-  const id = req.body.id
+  const id = req.vendor?.id
   if(!id){
     return next(new ErrorResponse("id is required", 400))
-  }
-
-  const existingvendor = await prisma.user.findUnique({
-    where: {
-      id
-    }
-  })
-
-  if(!existingvendor) {
-    return next(new ErrorResponse("User not found", 404))
   }
 
   const validData = vendorSchema.partial().parse(req.body);
